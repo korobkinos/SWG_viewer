@@ -1,0 +1,30 @@
+{
+    "connection": {
+        "ip": "192.168.56.2",
+        "port": 502,
+        "interval": 100
+    },
+    "window_size": [
+        691,
+        460
+    ],
+    "table_data": [
+        {
+            "address": "6454",
+            "comment": ""
+        },
+        {
+            "address": "1478",
+            "comment": ""
+        }
+    ],
+    "column_widths": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+    ],
+    "plot_state": []
+}
