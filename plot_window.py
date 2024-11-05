@@ -16,7 +16,6 @@ class PlotWindow(QMainWindow):
         if parent:
             from main_window import MainWindow
             assert isinstance(parent, MainWindow)
-
         self.setWindowTitle("Графики")
         self.resize(800, 600)
         self.setWindowModality(Qt.NonModal)  # Устанавливаем немодальное окно
@@ -32,8 +31,8 @@ class PlotWindow(QMainWindow):
         self.y_data = {}
 
         # Добавляем таблицу тегов и кнопку для удаления
-        self.tag_list = QTableWidget(0, 1)
-        self.tag_list.setHorizontalHeaderLabels(["Теги на графике"])
+        self.tag_list = QTableWidget(0, 3)
+        self.tag_list.setHorizontalHeaderLabels(["Address", "Current Value", "Comment"])
         self.tag_list.setSelectionBehavior(QTableWidget.SelectRows)
         self.delete_tag_btn = QPushButton("Удалить с графика")
         self.delete_tag_btn.clicked.connect(self.delete_selected_tag)
@@ -48,6 +47,46 @@ class PlotWindow(QMainWindow):
         central_widget = QWidget()
         central_widget.setLayout(layout)
         self.setCentralWidget(central_widget)
+
+    def update_tag_value(self, label, current_value, comment):
+        """Обновить текущее значение и комментарий для тега в таблице графиков."""
+        for row in range(self.tag_list.rowCount()):
+            if self.tag_list.item(row, 0).text() == label:  # Ищем тег по адресу
+                self.tag_list.setItem(row, 1, QTableWidgetItem(str(current_value)))  # Обновляем Current Value
+                self.tag_list.setItem(row, 2, QTableWidgetItem(comment))  # Обновляем Comment
+                break
+
+    def clear_and_load_graph_data(self, plot_state):
+        """Очищает все текущие данные с графика и загружает новые данные из plot_state."""
+        print("Очистка графиков и загрузка новых данных...")  # Отладка
+        self.clear_all_graph_data()  # очищаем текущие графики
+
+        for row, column_name in plot_state:
+            # Извлекаем адрес и значение из основной таблицы
+            address_item = self.parent().table.item(row, 0)
+            if address_item:
+                address = address_item.text()
+                label = f"{address} ({column_name})"
+
+                # Проверяем, получен ли индекс столбца
+                column_index = self.parent().get_column_index(column_name)
+                if column_index is None:
+                    print(f"Ошибка: Индекс для столбца {column_name} не найден.")  # Отладка
+                    continue
+
+                # Получаем текущее значение и комментарий
+                current_value_item = self.parent().table.item(row, column_index)
+                current_value = float(current_value_item.text()) if current_value_item else 0.0
+                comment_item = self.parent().table.item(row, 5)
+                comment = comment_item.text() if comment_item else ""
+
+                print(
+                    f"Добавление линии на график: {label} со значением {current_value} и комментарием '{comment}'")  # Отладка
+
+                # Добавляем линию на график
+                self.add_line((row, column_name), label, current_value, comment)
+            else:
+                print(f"Ошибка: Адрес для строки {row} не найден.")  # Отладка
 
     def closeEvent(self, event):
         """Обработчик закрытия окна для сохранения конфигурации графиков."""
@@ -72,7 +111,7 @@ class PlotWindow(QMainWindow):
         # if isinstance(self.parent(), MainWindow):
         self.parent().plot_data.clear()  # Полностью очищает plot_data
 
-    def add_line(self, key, label):
+    def add_line(self, key, label, current_value=0.0, comment=""):
         """Добавить линию на график и в список тегов."""
         if key not in self.lines:
             color = pg.intColor(len(self.lines), hues=10)
@@ -80,10 +119,12 @@ class PlotWindow(QMainWindow):
             self.lines[key] = line
             self.y_data[key] = np.zeros(1000)
 
-            # Добавляем тег в список
+            # Добавляем строку с адресом, текущим значением и комментарием в таблицу тегов
             row_position = self.tag_list.rowCount()
             self.tag_list.insertRow(row_position)
-            self.tag_list.setItem(row_position, 0, QTableWidgetItem(label))
+            self.tag_list.setItem(row_position, 0, QTableWidgetItem(label))  # Address
+            self.tag_list.setItem(row_position, 1, QTableWidgetItem(str(current_value)))  # Current Value
+            self.tag_list.setItem(row_position, 2, QTableWidgetItem(comment))  # Comment
 
     def remove_line(self, key):
         """Удалить линию с графика и из списка тегов."""
@@ -108,11 +149,25 @@ class PlotWindow(QMainWindow):
                     self.remove_line(key)
 
                     # Удаляем тег из plot_data в MainWindow
-                    # if isinstance(self.parent(), MainWindow):
                     self.parent().remove_tag_from_plot_data(key)
 
                     self.tag_list.removeRow(selected_row)
                     break
+
+    def update_line_value(self, key, new_value):
+        """Обновить текущее значение для линии в таблице и на графике."""
+        if key in self.lines:
+            # Сдвигаем данные влево и добавляем новое значение справа
+            self.y_data[key] = np.roll(self.y_data[key], -1)
+            self.y_data[key][-1] = new_value
+            self.lines[key].setData(np.arange(1000), self.y_data[key])
+
+            # Обновляем значение в таблице
+            for row in range(self.tag_list.rowCount()):
+                if self.tag_list.item(row, 0).text() == key[1]:  # Найти нужный тег по адресу
+                    self.tag_list.setItem(row, 1, QTableWidgetItem(str(new_value)))  # Обновить Current Value
+                    break
+
 
     def update_line(self, key, new_value):
         """Обновить линию на графике с новыми значениями."""

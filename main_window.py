@@ -12,7 +12,7 @@ from pyModbusTCP.client import ModbusClient
 from data_acquisition import CounterThread
 from plot_window import PlotWindow, table_config_file
 from settings_window import SettingsWindow
-from config_manager import save_config, load_config
+# from config_manager import save_config, load_config
 
 
 # Основной класс приложения
@@ -40,7 +40,7 @@ class MainWindow(QWidget):
         self.config_path_label = QLabel("Конфигурация не загружена", self)
 
         # Создаем элементы интерфейса
-        self.setWindowTitle("SWG Viewer")
+        self.setWindowTitle("SWG Viewer 1.01")
         # self.resize(self.config.get('window_size', QSize(1000, 600)))
 
         self.connection_status_indicator = QLabel()
@@ -224,7 +224,6 @@ class MainWindow(QWidget):
     def handle_address_input(self):
         """Обработка ввода адреса для чтения значений из Modbus."""
         address_text = self.address_input.text().strip()
-
         # Проверка, существует ли объект mb_client
         if not hasattr(self, 'mb_client'):
             print("Error: mb_client is not initialized")
@@ -346,7 +345,7 @@ class MainWindow(QWidget):
             self.remove_from_plot_btn.setEnabled(False)
 
     def update_plot(self):
-        """Обновляем линии графика с данными из таблицы."""
+        """Обновляем линии графика и значения таблицы на экране 'Графики'."""
         if self.plot_window is None:
             return  # Окно графика не открыто
 
@@ -360,41 +359,122 @@ class MainWindow(QWidget):
                         new_value = float(item.text())
                     except ValueError:
                         new_value = 0.0
+                    # Обновляем линию на графике
                     self.plot_window.update_line(key, new_value)
 
+                    # Обновляем значение в таблице на экране "Графики"
+                    address = self.table.item(row, 0).text() if self.table.item(row, 0) else ""
+                    comment = self.table.item(row, 5).text() if self.table.item(row, 5) else ""
+                    self.plot_window.update_tag_value(address, new_value, comment)
+
+    def get_column_index(self, column_name):
+        """Получает индекс столбца по имени."""
+        header = self.table.horizontalHeader()
+        for col in range(header.count()):
+            if header.model().headerData(col, Qt.Horizontal) == column_name:
+                return col
+        return None  # Если столбец не найден
+
     def load_config(self):
-        """Загрузка всех настроек из одного файла конфигурации."""
         file_path, _ = QFileDialog.getOpenFileName(self, "Загрузить конфигурацию", "", "JSON Files (*.json)")
         if not file_path:
-            return  # Если файл не выбран, выходим из функции
+            return
 
         try:
-            # Чтение данных из файла
             with open(file_path, 'r') as f:
                 config = json.load(f)
 
-            # Если окно графика открыто, очищаем его, иначе просто сохраняем данные
-            if self.plot_window is not None:
-                for line in list(self.plot_window.lines.values()):
-                    self.plot_window.plot_widget.removeItem(line)
-                self.plot_window.lines.clear()
-                self.plot_window.y_data.clear()
+            # Останавливаем все текущие потоки, чтобы избежать конфликтов
+            self.stop_all_threads()
+            # self.toggle_online_status(False)
+            # переключатель в оффлайн
+            # Загружаем настройки подключения
+            connection = config.get("connection", {})
+            self.ip = connection.get("ip", "192.168.56.2")
+            self.port = connection.get("port", 502)
+            self.interval = connection.get("interval", 100)
 
-            # Сохраняем состояние графиков для последующего восстановления
-            self.plot_data = config.get("plot_state", [])
+            # Обновляем данные основной таблицы
+            self.update_main_table_from_config(config.get("table_data", []))
 
-            # Если окно графиков открыто, восстанавливаем линии графика
-            if self.plot_window is not None:
-                self.update_graphs()
+            # Загружаем состояние графиков
+            plot_state = config.get("plot_state", [])
+            if not self.plot_window or not self.plot_window.isVisible():
+                self.open_plot_window()
+            if self.plot_window:
+                self.plot_window.clear_and_load_graph_data(plot_state)
 
             # Обновляем текущий путь конфигурации
             self.current_config_path = file_path
             self.config_path_label.setText(f"Текущая конфигурация: {file_path}")
 
+            # Перезапускаем потоки, если состояние было Online до загрузки конфигурации
+            if self.online:
+                # self.stop_all_threads()
+                self.start_all_threads()
+
         except FileNotFoundError:
             self.config_path_label.setText("Файл конфигурации не найден.")
         except json.JSONDecodeError:
             self.config_path_label.setText("Ошибка чтения файла конфигурации.")
+
+    def reset_all_data(self):
+        """Полностью сбрасывает текущие данные из таблицы и графиков."""
+        # Очистка основной таблицы
+        self.table.setRowCount(0)
+
+        # Остановка всех потоков
+        self.stop_all_threads()
+
+        # Очистка plot_data и plot_window, если открыто окно графиков
+        self.plot_data.clear()
+        if self.plot_window:
+            self.plot_window.clear_all_graph_data()
+
+    def update_main_table_from_config(self, table_data):
+        """Обновляет основную таблицу на основании данных конфигурации."""
+        # Остановить все потоки перед обновлением таблицы
+        self.stop_all_threads()
+
+        # Полностью очищаем таблицу перед загрузкой
+        self.table.setRowCount(0)
+
+        for row_data in table_data:
+            row_position = self.table.rowCount()
+            self.table.insertRow(row_position)
+
+            # Обновляем каждое поле с использованием значения по умолчанию, если ключ отсутствует
+            address = row_data.get("Address", "")
+            self.table.setItem(row_position, 0, QTableWidgetItem(address))
+            self.table.setItem(row_position, 1, QTableWidgetItem(str(row_data.get("REAL", 0.0))))
+            self.table.setItem(row_position, 2, QTableWidgetItem(str(row_data.get("DWORD", 0))))
+            self.table.setItem(row_position, 3, QTableWidgetItem(str(row_data.get("WORD", 0))))
+            self.table.setItem(row_position, 4, QTableWidgetItem(str(row_data.get("BOOL", "Ошибка"))))
+            self.table.setItem(row_position, 5, QTableWidgetItem(row_data.get("Комментарий", "")))
+
+        # После завершения обновления таблицы перезапускаем потоки, если приложение онлайн
+        if self.online:
+            self.start_all_threads()
+
+    def restore_plot_data(self, plot_state):
+        """Восстанавливает данные для графиков из конфигурационного файла."""
+        for row, column_name in plot_state:
+            key = (row, column_name)
+            if self.plot_window and key not in self.plot_window.lines:
+                address_item = self.table.item(row, 0)
+                address = address_item.text() if address_item else "Unknown"
+
+                # Получение текущего значения в зависимости от столбца
+                column_index = {"REAL": 1, "DWORD": 2, "WORD": 3}.get(column_name)
+                current_value_item = self.table.item(row, column_index) if column_index is not None else None
+                current_value = float(current_value_item.text()) if current_value_item else 0.0
+
+                # Получение комментария
+                comment_item = self.table.item(row, 5)
+                comment = comment_item.text() if comment_item else ""
+
+                # Добавление линии на график
+                self.plot_window.add_line(key, f"{address} ({column_name})", current_value, comment)
 
     def update_graphs(self):
         """Восстановить графики из plot_data при открытии окна графика."""
@@ -403,7 +483,25 @@ class MainWindow(QWidget):
             if self.plot_window and key not in self.plot_window.lines:
                 address_item = self.table.item(row, 0)
                 address = address_item.text() if address_item else "Unknown"
-                self.plot_window.add_line(key, f"{address} ({column_name})")
+
+                # Получение текущего значения в зависимости от столбца
+                if column_name == "REAL":
+                    current_value_item = self.table.item(row, 1)
+                elif column_name == "DWORD":
+                    current_value_item = self.table.item(row, 2)
+                elif column_name == "WORD":
+                    current_value_item = self.table.item(row, 3)
+                else:
+                    current_value_item = None
+
+                current_value = float(current_value_item.text()) if current_value_item else 0.0
+
+                # Получение комментария
+                comment_item = self.table.item(row, 5)
+                comment = comment_item.text() if comment_item else ""
+
+                # Передача адреса, текущего значения и комментария
+                self.plot_window.add_line(key, f"{address} ({column_name})", current_value, comment)
 
     def open_settings_window(self):
         """Открыть окно настроек подключения."""
@@ -643,89 +741,30 @@ class MainWindow(QWidget):
             QMessageBox.warning(self, "Ошибка", "Выберите строку для удаления.")
 
     def handle_item_changed(self, item):
-        if not self.online:
-            return  # Не выполняем никаких действий в режиме "offline"
         """Обработчик для изменений ячеек в таблице."""
         row = item.row()
         column = item.column()
 
-        if column == 0:  # Если изменяется столбец Address
-            address_text = item.text().strip()
+        # Получаем адрес и комментарий из основной таблицы
+        address = self.table.item(row, 0).text() if self.table.item(row, 0) else ""
+        comment = self.table.item(row, 5).text() if self.table.item(row, 5) else ""
 
-            # Проверка формата "число.число" для битового адреса
-            bit_match = re.match(r"^(\d+)\.(\d+)$", address_text)
-            if bit_match:
-                # Битовый адрес
-                register = int(bit_match.group(1))
-                bit_position = int(bit_match.group(2))
+        # Если изменилось значение "REAL", "DWORD" или "WORD", обновляем текущее значение
+        if column in [1, 2, 3]:  # Индексы столбцов для REAL, DWORD, WORD
+            current_value = self.table.item(row, column).text()
 
-                if 0 <= bit_position <= 15:
-                    # Останавливаем текущий поток для этой строки, если он существует
-                    if row < len(self.threads) and self.threads[row] is not None:
-                        self.threads[row].stop()
-                        self.threads[row].wait()
+            # Проверяем, открыто ли окно "Графики" и обновляем значение
+            if self.plot_window and self.plot_window.isVisible():
+                # Передаем обновленные данные в метод update_tag_value
+                self.plot_window.update_tag_value(f"{address} ({self.table.horizontalHeaderItem(column).text()})",
+                                                  current_value, comment)
 
-                    # Удаляем старый поток из списка
-                    if row < len(self.threads):
-                        self.threads.pop(row)
-
-                    # Чтение регистра Modbus
-                    holding_registers = self.mb_client.read_holding_registers(register, 1)
-                    if isinstance(holding_registers, list) and len(holding_registers) > 0:
-                        register_value = holding_registers[0]
-                        bit_value = (register_value >> bit_position) & 1
-
-                        # Обновляем значения в таблице: WORD — значение бита, DWORD и REAL — 0
-                        self.table.setItem(row, 1, QTableWidgetItem("0.0"))  # REAL
-                        self.table.setItem(row, 2, QTableWidgetItem("0"))  # DWORD
-                        self.table.setItem(row, 3, QTableWidgetItem(str(bit_value)))  # WORD
-                        self.table.setItem(row, 4, QTableWidgetItem("True" if bit_value else "False"))  # BOOL
-
-                        # Перезапускаем поток для нового адреса
-                        thread = CounterThread(row, f"{register}.{bit_position}", self.ip, self.port, self.interval)
-                        thread.updated_value.connect(self.update_table)
-                        self.threads.insert(row, thread)
-                        thread.start()
-                    else:
-                        QMessageBox.warning(self, "Ошибка", f"Не удалось прочитать регистр {register}")
-                else:
-                    QMessageBox.warning(self, "Ошибка", "Введите корректный бит от 0 до 15.")
-            elif address_text.isdigit():
-                # Обычный адрес
-                register = int(address_text)
-
-                # Останавливаем текущий поток для этой строки, если он существует
-                if row < len(self.threads) and self.threads[row] is not None:
-                    self.threads[row].stop()
-                    self.threads[row].wait()
-
-                # Удаляем старый поток из списка
-                if row < len(self.threads):
-                    self.threads.pop(row)
-
-                # Перезапускаем поток для обычного регистра
-                thread = CounterThread(row, register, self.ip, self.port, self.interval)
-                thread.updated_value.connect(self.update_table)
-                self.threads.insert(row, thread)
-                thread.start()
-            else:
-                QMessageBox.warning(self, "Ошибка", "Введите корректный адрес в формате 'число' или 'число.число'")
-            # Если приложение в режиме online, перезапускаем поток
-            if self.online:
-                # Останавливаем текущий поток для этой строки, если он существует
-                if row < len(self.threads) and self.threads[row] is not None:
-                    self.threads[row].stop()
-                    self.threads[row].wait()
-
-                # Удаляем старый поток из списка
-                if row < len(self.threads):
-                    self.threads.pop(row)
-
-                # Создаем и запускаем новый поток
-                thread = CounterThread(row, address_text, self.ip, self.port, self.interval)
-                thread.updated_value.connect(self.update_table)
-                self.threads.insert(row, thread)
-                thread.start()
+        # Если изменился комментарий, обновляем комментарий в таблице графиков
+        elif column == 5:  # Индекс столбца для комментария
+            if self.plot_window and self.plot_window.isVisible():
+                # Определяем текущее значение в зависимости от активного столбца (REAL, DWORD или WORD)
+                current_value = self.table.item(row, 1).text()  # Здесь предполагаем, что REAL в столбце 1
+                self.plot_window.update_tag_value(f"{address} (REAL)", current_value, comment)
 
     def update_table(self, index, values):
         if not self.online:
@@ -737,101 +776,19 @@ class MainWindow(QWidget):
         self.table.setItem(index, 4, QTableWidgetItem(values[3]))
 
     def save_config(self):
-        """Сохранение всех настроек в один файл конфигурации."""
-        # Открыть диалог для сохранения файла
         file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить конфигурацию", "", "JSON Files (*.json)")
         if not file_path:
-            return  # Если файл не выбран, выходим из функции
-
-        # Формируем данные для сохранения
+            return
         config_data = {
-            "connection": {
-                "ip": self.ip,
-                "port": self.port,
-                "interval": self.interval
-            },
-            "window_size": [self.width(), self.height()],
-            "table_data": [],
-            "column_widths": [self.table.columnWidth(i) for i in range(self.table.columnCount())],
-            "plot_state": [(key[0], key[1]) for key in self.plot_window.lines] if self.plot_window else []
+            "connection": {"ip": self.ip, "port": self.port, "interval": self.interval},
+            "table_data": [
+                {self.table.horizontalHeaderItem(col).text(): self.table.item(row, col).text()
+                 for col in range(self.table.columnCount())}
+                for row in range(self.table.rowCount())
+            ],
+            "plot_state": [(row, column) for (row, column) in self.plot_data]
         }
-
-        # Сохраняем данные таблицы
-        for row in range(self.table.rowCount()):
-            address_item = self.table.item(row, 0)
-            comment_item = self.table.item(row, 5)
-            if address_item and comment_item:
-                config_data["table_data"].append({
-                    "address": address_item.text(),
-                    "comment": comment_item.text()
-                })
-
-        # Сохраняем данные в выбранный файл
         with open(file_path, 'w') as f:
             json.dump(config_data, f, indent=4)
-
-        # Обновляем текущий путь конфигурации
         self.current_config_path = file_path
         self.config_path_label.setText(f"Текущая конфигурация: {file_path}")
-
-        # Показать сообщение об успешном сохранении
-        message_box = QMessageBox(self)
-        message_box.setWindowTitle("Сохранение")
-        message_box.setText("Конфигурация успешно сохранена!")
-        message_box.setWindowModality(Qt.ApplicationModal)
-        message_box.exec()
-
-    def load_config(self):
-        """Загрузка всех настроек из одного файла конфигурации."""
-        file_path, _ = QFileDialog.getOpenFileName(self, "Загрузить конфигурацию", "", "JSON Files (*.json)")
-        if not file_path:
-            return  # Если файл не выбран, выходим из функции
-
-        try:
-            # Чтение данных из файла
-            with open(file_path, 'r') as f:
-                config = json.load(f)
-
-            # Закрываем и удаляем текущее окно графиков перед загрузкой новой конфигурации
-            if self.plot_window is not None:
-                self.plot_window.close()
-                self.plot_window = None
-
-            # Загрузка настроек подключения
-            connection = config.get("connection", {})
-            self.ip = connection.get("ip", "192.168.56.2")
-            self.port = connection.get("port", 502)
-            self.interval = connection.get("interval", 100)
-
-            # Загрузка данных окна
-            window_size = config.get("window_size", [800, 400])
-            self.resize(QSize(window_size[0], window_size[1]))
-
-            # Загрузка данных таблицы
-            self.table.setRowCount(0)  # Очищаем таблицу перед загрузкой
-            for row_data in config.get("table_data", []):
-                row_position = self.table.rowCount()
-                self.table.insertRow(row_position)
-                self.table.setItem(row_position, 0, QTableWidgetItem(str(row_data["address"])))
-                self.table.setItem(row_position, 1, QTableWidgetItem("0.0"))
-                self.table.setItem(row_position, 2, QTableWidgetItem("0"))
-                self.table.setItem(row_position, 3, QTableWidgetItem("0"))
-                self.table.setItem(row_position, 4, QTableWidgetItem("Ошибка"))
-
-                comment_item = QTableWidgetItem(row_data["comment"])
-                comment_item.setFlags(comment_item.flags() | Qt.ItemIsEditable)
-                self.table.setItem(row_position, 5, comment_item)
-
-            # Сохраняем состояние графиков для отложенной загрузки
-            plot_state = config.get("plot_state", [])
-            self.plot_data = plot_state  # Сохраняем данные графиков для открытия
-
-            # Обновляем текущий путь конфигурации
-            self.current_config_path = file_path
-            self.config_path_label.setText(f"Текущая конфигурация: {file_path}")
-
-        except FileNotFoundError:
-            self.config_path_label.setText("Файл конфигурации не найден.")
-        except json.JSONDecodeError:
-            self.config_path_label.setText("Ошибка чтения файла конфигурации.")
-
