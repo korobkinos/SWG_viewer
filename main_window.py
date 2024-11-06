@@ -225,15 +225,16 @@ class MainWindow(QWidget):
     def handle_address_input(self):
         """Обработка ввода адреса для чтения значений из Modbus."""
         address_text = self.address_input.text().strip()
+
         # Проверка, существует ли объект mb_client
         if not hasattr(self, 'mb_client'):
             print("Error: mb_client is not initialized")
             return
 
-        # Проверяем, соответствует ли формат "число.число"
+        # Проверяем, соответствует ли формат "число.число" для адресов с битами
         match = re.match(r"^(\d+)\.(\d+)$", address_text)
         if match:
-            # Извлекаем номер регистра и бита
+            # Извлекаем номер регистра и позицию бита
             register = int(match.group(1))
             bit_position = int(match.group(2))
 
@@ -245,10 +246,10 @@ class MainWindow(QWidget):
                     # Получаем значение регистра
                     register_value = holding_registers[0]
 
-                    # Извлекаем значение бита с помощью побитового сдвига и побитовой операции И
+                    # Извлекаем значение конкретного бита
                     bit_value = (register_value >> bit_position) & 1
 
-                    # Проверяем, выбрана ли строка в таблице
+                    # Устанавливаем значение в таблице
                     current_row = self.table.currentRow()
                     if current_row == -1:
                         # Если строка не выбрана, добавляем новую строку
@@ -256,7 +257,7 @@ class MainWindow(QWidget):
                         self.table.insertRow(current_row)
                         self.table.setItem(current_row, 0, QTableWidgetItem(address_text))  # Вставляем адрес
 
-                    # Обновляем поле WORD: 1 для True, 0 для False
+                    # Обновляем значение бита
                     self.table.setItem(current_row, 3, QTableWidgetItem(str(bit_value)))
 
                     # Устанавливаем DWORD и REAL в 0, так как это битовый адрес
@@ -267,7 +268,8 @@ class MainWindow(QWidget):
             else:
                 print("Error: Bit position must be between 0 and 15")
         else:
-            print("Error: Invalid address format. Use 'register.bit', e.g., 1492.1")
+            print("Error: Invalid address format. Use 'register.bit', e.g., 6564.1")
+
 
     def closeEvent(self, event):
         """Закрываем все дочерние окна при закрытии главного окна."""

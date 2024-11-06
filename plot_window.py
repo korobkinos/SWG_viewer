@@ -3,10 +3,18 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMainWindow, QVBoxLayout, QTableWidget, QPushButton, QWidget, QTableWidgetItem
+from pyqtgraph import AxisItem
 
 # Файл для хранения настроек и конфигурации таблицы
 config_file = 'config.json'
 table_config_file = 'table_config.json'
+
+
+class CustomAxis(AxisItem):
+    def tickStrings(self, values, scale, spacing):
+        # Форматируем числа в виде `0.0` вместо `0e+0`
+        return [f"{value:.1f}" for value in values]
+
 
 class PlotWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -16,15 +24,25 @@ class PlotWindow(QMainWindow):
         if parent:
             from main_window import MainWindow
             assert isinstance(parent, MainWindow)
+
         self.setWindowTitle("Графики")
         self.resize(800, 600)
         self.setWindowModality(Qt.NonModal)  # Устанавливаем немодальное окно
 
         # Виджет графика
+        self.plot_widget = pg.PlotWidget(axisItems={'left': CustomAxis(orientation='left')})
         self.plot_widget = pg.PlotWidget(title="")
-        self.plot_widget.setLabel("left", "Value")
-        self.plot_widget.setLabel("bottom", "Time")
-        self.plot_widget.addLegend()
+        self.plot_widget.setBackground('w')  # Устанавливаем белый фон
+        self.plot_widget.getAxis("left").setPen("k")  # Черная ось Y
+        self.plot_widget.getAxis("bottom").setPen("k")  # Черная ось X
+        self.plot_widget.showGrid(x=True, y=True, alpha=0.3)  # Добавляем сетку с прозрачностью
+
+        self.plot_widget.setLabel("left", "Value", color="black")
+        self.plot_widget.setLabel("bottom", "Time", color="black")
+        self.plot_widget.addLegend(labelTextColor="black")  # Легенда черного цвета
+
+        # Отключаем автоматический префикс на оси Y
+        self.plot_widget.getAxis('left').enableAutoSIPrefix(False)
 
         # Словари для линий и данных
         self.lines = {}
