@@ -21,6 +21,7 @@ class MainWindow(QWidget):
         super().__init__()
 
         # Устанавливаем текущий путь конфигурации в None до загрузки
+        self.settings_window = None
         self.current_config_path = None
 
         # Установка начальных значений для конфигурации
@@ -376,42 +377,42 @@ class MainWindow(QWidget):
         return None  # Если столбец не найден
 
     def load_config(self):
+        # Останавливаем все потоки и переводим приложение в "оффлайн"
+        self.stop_all_threads()
+        self.online = False
+        self.update_connection_status()  # Обновляем индикатор состояния
+
+        # Очищаем таблицу и графики перед загрузкой новой конфигурации
+        self.table.setRowCount(0)
+        if self.plot_window and self.plot_window.isVisible():
+            self.plot_window.clear_all_graph_data()
+
+        # Загружаем новый файл конфигурации
         file_path, _ = QFileDialog.getOpenFileName(self, "Загрузить конфигурацию", "", "JSON Files (*.json)")
         if not file_path:
-            return
+            return  # Если файл не выбран, выходим из функции
 
         try:
+            # Чтение данных из файла конфигурации
             with open(file_path, 'r') as f:
                 config = json.load(f)
 
-            # Останавливаем все текущие потоки, чтобы избежать конфликтов
-            self.stop_all_threads()
-            # self.toggle_online_status(False)
-            # переключатель в оффлайн
-            # Загружаем настройки подключения
+            # Загрузка параметров подключения
             connection = config.get("connection", {})
             self.ip = connection.get("ip", "192.168.56.2")
             self.port = connection.get("port", 502)
             self.interval = connection.get("interval", 100)
 
-            # Обновляем данные основной таблицы
+            # Обновление таблицы с данными из конфигурации
             self.update_main_table_from_config(config.get("table_data", []))
 
-            # Загружаем состояние графиков
-            plot_state = config.get("plot_state", [])
-            if not self.plot_window or not self.plot_window.isVisible():
-                self.open_plot_window()
-            if self.plot_window:
-                self.plot_window.clear_and_load_graph_data(plot_state)
+            # Восстановление данных графиков
+            if self.plot_window and self.plot_window.isVisible():
+                self.restore_plot_data(config.get("plot_state", []))
 
-            # Обновляем текущий путь конфигурации
+            # Устанавливаем текущий путь конфигурации и обновляем метку
             self.current_config_path = file_path
             self.config_path_label.setText(f"Текущая конфигурация: {file_path}")
-
-            # Перезапускаем потоки, если состояние было Online до загрузки конфигурации
-            if self.online:
-                # self.stop_all_threads()
-                self.start_all_threads()
 
         except FileNotFoundError:
             self.config_path_label.setText("Файл конфигурации не найден.")
@@ -433,28 +434,17 @@ class MainWindow(QWidget):
 
     def update_main_table_from_config(self, table_data):
         """Обновляет основную таблицу на основании данных конфигурации."""
-        # Остановить все потоки перед обновлением таблицы
-        self.stop_all_threads()
-
-        # Полностью очищаем таблицу перед загрузкой
-        self.table.setRowCount(0)
+        self.table.setRowCount(0)  # Полностью очищаем текущие данные в таблице
 
         for row_data in table_data:
             row_position = self.table.rowCount()
             self.table.insertRow(row_position)
-
-            # Обновляем каждое поле с использованием значения по умолчанию, если ключ отсутствует
-            address = row_data.get("Address", "")
-            self.table.setItem(row_position, 0, QTableWidgetItem(address))
-            self.table.setItem(row_position, 1, QTableWidgetItem(str(row_data.get("REAL", 0.0))))
-            self.table.setItem(row_position, 2, QTableWidgetItem(str(row_data.get("DWORD", 0))))
-            self.table.setItem(row_position, 3, QTableWidgetItem(str(row_data.get("WORD", 0))))
-            self.table.setItem(row_position, 4, QTableWidgetItem(str(row_data.get("BOOL", "Ошибка"))))
-            self.table.setItem(row_position, 5, QTableWidgetItem(row_data.get("Комментарий", "")))
-
-        # После завершения обновления таблицы перезапускаем потоки, если приложение онлайн
-        if self.online:
-            self.start_all_threads()
+            self.table.setItem(row_position, 0, QTableWidgetItem(row_data.get("Address", "")))
+            self.table.setItem(row_position, 1, QTableWidgetItem(str(row_data.get("REAL", "0.0"))))
+            self.table.setItem(row_position, 2, QTableWidgetItem(str(row_data.get("DWORD", "0"))))
+            self.table.setItem(row_position, 3, QTableWidgetItem(str(row_data.get("WORD", "0"))))
+            self.table.setItem(row_position, 4, QTableWidgetItem(row_data.get("BOOL", "Ошибка")))
+            self.table.setItem(row_position, 5, QTableWidgetItem(row_data.get("comment", "")))
 
     def restore_plot_data(self, plot_state):
         """Восстанавливает данные для графиков из конфигурационного файла."""
@@ -596,7 +586,7 @@ class MainWindow(QWidget):
 
     def update_connection_status(self):
         """Проверяет состояние подключения и обновляет метку состояния с индикатором."""
-        if self.mb_client and self.mb_client.is_open and self.online:
+        if self.online:
             status_text = f"IP: {self.ip} - online"
             color = "green"
             print("Status: Online")
@@ -607,7 +597,6 @@ class MainWindow(QWidget):
 
         # Обновляем статус с индикатором
         self.connection_status_label.setText(f"{status_text} <span style='color:{color};'>●</span>")
-
 
     # Метод для создания цветного кругового индикатора
     def create_circle_pixmap(self, color):
@@ -776,19 +765,49 @@ class MainWindow(QWidget):
         self.table.setItem(index, 4, QTableWidgetItem(values[3]))
 
     def save_config(self):
+        """Сохранение конфигурации без текущих значений REAL, DWORD, WORD и BOOL."""
+        # Открыть диалог для сохранения файла
         file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить конфигурацию", "", "JSON Files (*.json)")
         if not file_path:
-            return
+            return  # Если файл не выбран, выходим из функции
+
+        # Формируем данные для сохранения
         config_data = {
-            "connection": {"ip": self.ip, "port": self.port, "interval": self.interval},
-            "table_data": [
-                {self.table.horizontalHeaderItem(col).text(): self.table.item(row, col).text()
-                 for col in range(self.table.columnCount())}
-                for row in range(self.table.rowCount())
-            ],
-            "plot_state": [(row, column) for (row, column) in self.plot_data]
+            "connection": {
+                "ip": self.ip,
+                "port": self.port,
+                "interval": self.interval
+            },
+            "window_size": [self.width(), self.height()],
+            "table_data": [],
+            "column_settings": {
+                "widths": [self.table.columnWidth(i) for i in range(self.table.columnCount())],
+                "visibility": [not self.table.isColumnHidden(i) for i in range(self.table.columnCount())]
+            },
+            "plot_state": [(key[0], key[1]) for key in self.plot_window.lines] if self.plot_window else []
         }
+
+        # Сохраняем только адреса и комментарии из таблицы
+        for row in range(self.table.rowCount()):
+            address_item = self.table.item(row, 0)
+            comment_item = self.table.item(row, 5)
+            if address_item and comment_item:
+                config_data["table_data"].append({
+                    "address": address_item.text(),
+                    "comment": comment_item.text()
+                })
+
+        # Сохраняем данные в выбранный файл
         with open(file_path, 'w') as f:
             json.dump(config_data, f, indent=4)
+
+        # Обновляем текущий путь конфигурации
         self.current_config_path = file_path
         self.config_path_label.setText(f"Текущая конфигурация: {file_path}")
+
+        # Показать сообщение об успешном сохранении
+        message_box = QMessageBox(self)
+        message_box.setWindowTitle("Сохранение")
+        message_box.setText("Конфигурация успешно сохранена!")
+        message_box.setWindowModality(Qt.ApplicationModal)
+        message_box.exec()

@@ -22,7 +22,7 @@ class CounterThread(QThread):
         self.register = 0
 
     def run(self):
-        max_retries = 3  # Установите одну попытку для экономии ресурсов
+        max_retries = 1  # Установите одну попытку для экономии ресурсов
 
         if not self.address:
             print(f"Ошибка: пустой адрес для потока {self.index}")
