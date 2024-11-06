@@ -5,16 +5,12 @@
         "interval": 100
     },
     "window_size": [
-        546,
-        460
+        858,
+        663
     ],
     "table_data": [
         {
-            "address": "1478",
-            "comment": ""
-        },
-        {
-            "address": "1426",
+            "address": "6463",
             "comment": ""
         }
     ],
@@ -36,5 +32,10 @@
             true
         ]
     },
-    "plot_state": []
+    "plot_state": [
+        [
+            0,
+            "DWORD"
+        ]
+    ]
 }

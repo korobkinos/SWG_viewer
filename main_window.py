@@ -366,7 +366,7 @@ class MainWindow(QWidget):
                     # Обновляем значение в таблице на экране "Графики"
                     address = self.table.item(row, 0).text() if self.table.item(row, 0) else ""
                     comment = self.table.item(row, 5).text() if self.table.item(row, 5) else ""
-                    self.plot_window.update_tag_value(address, new_value, comment)
+                    self.plot_window.update_tag_value(f"{address} ({column_name})", new_value, comment)
 
     def get_column_index(self, column_name):
         """Получает индекс столбца по имени."""
@@ -376,41 +376,66 @@ class MainWindow(QWidget):
                 return col
         return None  # Если столбец не найден
 
-    def load_config(self):
-        # Останавливаем все потоки и переводим приложение в "оффлайн"
-        self.stop_all_threads()
-        self.online = False
-        self.update_connection_status()  # Обновляем индикатор состояния
-
-        # Очищаем таблицу и графики перед загрузкой новой конфигурации
-        self.table.setRowCount(0)
-        if self.plot_window and self.plot_window.isVisible():
+    def restore_plot_state(self, plot_state):
+        """Восстанавливает графики из данных plot_state в конфигурации."""
+        # Очищаем текущие графики перед восстановлением
+        if self.plot_window:
             self.plot_window.clear_all_graph_data()
 
-        # Загружаем новый файл конфигурации
+        # Восстанавливаем графики
+        for row, column_name in plot_state:
+            # Получаем адрес и комментарий из основной таблицы на основании строки `row`
+            address_item = self.table.item(row, 0)
+            comment_item = self.table.item(row, 5)
+
+            if address_item:
+                address = address_item.text()
+                label = f"{address} ({column_name})"
+                comment = comment_item.text() if comment_item else ""
+
+                # Получаем текущее значение в зависимости от типа
+                if column_name == "REAL":
+                    current_value_item = self.table.item(row, 1)
+                elif column_name == "DWORD":
+                    current_value_item = self.table.item(row, 2)
+                elif column_name == "WORD":
+                    current_value_item = self.table.item(row, 3)
+                else:
+                    current_value_item = None
+
+                current_value = float(current_value_item.text()) if current_value_item else 0.0
+
+                # Добавляем линию на график с восстановленными данными
+                self.plot_window.add_line((row, column_name), label, current_value, comment)
+
+    def load_config(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Загрузить конфигурацию", "", "JSON Files (*.json)")
         if not file_path:
             return  # Если файл не выбран, выходим из функции
 
         try:
-            # Чтение данных из файла конфигурации
+            # Чтение данных из файла
             with open(file_path, 'r') as f:
                 config = json.load(f)
 
-            # Загрузка параметров подключения
+            # Загрузка настроек подключения
             connection = config.get("connection", {})
             self.ip = connection.get("ip", "192.168.56.2")
             self.port = connection.get("port", 502)
             self.interval = connection.get("interval", 100)
 
-            # Обновление таблицы с данными из конфигурации
+            # Обновление таблицы в главном окне
             self.update_main_table_from_config(config.get("table_data", []))
 
-            # Восстановление данных графиков
-            if self.plot_window and self.plot_window.isVisible():
-                self.restore_plot_data(config.get("plot_state", []))
+            # Проверяем, создано ли окно графика, и создаем его при необходимости
+            if not self.plot_window:
+                self.plot_window = PlotWindow(self)
 
-            # Устанавливаем текущий путь конфигурации и обновляем метку
+            # Восстановление графиков из `plot_state`
+            plot_state = config.get("plot_state", [])
+            self.plot_window.clear_and_load_graph_data(plot_state)  # Используем метод для загрузки данных на график
+
+            # Обновление текущего пути конфигурации
             self.current_config_path = file_path
             self.config_path_label.setText(f"Текущая конфигурация: {file_path}")
 
@@ -439,7 +464,7 @@ class MainWindow(QWidget):
         for row_data in table_data:
             row_position = self.table.rowCount()
             self.table.insertRow(row_position)
-            self.table.setItem(row_position, 0, QTableWidgetItem(row_data.get("Address", "")))
+            self.table.setItem(row_position, 0, QTableWidgetItem(row_data.get("address", "")))
             self.table.setItem(row_position, 1, QTableWidgetItem(str(row_data.get("REAL", "0.0"))))
             self.table.setItem(row_position, 2, QTableWidgetItem(str(row_data.get("DWORD", "0"))))
             self.table.setItem(row_position, 3, QTableWidgetItem(str(row_data.get("WORD", "0"))))
@@ -744,16 +769,8 @@ class MainWindow(QWidget):
 
             # Проверяем, открыто ли окно "Графики" и обновляем значение
             if self.plot_window and self.plot_window.isVisible():
-                # Передаем обновленные данные в метод update_tag_value
                 self.plot_window.update_tag_value(f"{address} ({self.table.horizontalHeaderItem(column).text()})",
                                                   current_value, comment)
-
-        # Если изменился комментарий, обновляем комментарий в таблице графиков
-        elif column == 5:  # Индекс столбца для комментария
-            if self.plot_window and self.plot_window.isVisible():
-                # Определяем текущее значение в зависимости от активного столбца (REAL, DWORD или WORD)
-                current_value = self.table.item(row, 1).text()  # Здесь предполагаем, что REAL в столбце 1
-                self.plot_window.update_tag_value(f"{address} (REAL)", current_value, comment)
 
     def update_table(self, index, values):
         if not self.online:

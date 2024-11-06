@@ -5,24 +5,16 @@
         "interval": 100
     },
     "window_size": [
-        546,
-        460
+        858,
+        663
     ],
     "table_data": [
         {
             "address": "6454",
-            "comment": ""
+            "comment": "1111"
         },
         {
-            "address": "1478",
-            "comment": ""
-        },
-        {
-            "address": "1410",
-            "comment": ""
-        },
-        {
-            "address": "1412",
+            "address": "6458",
             "comment": ""
         }
     ],
@@ -44,5 +36,10 @@
             true
         ]
     },
-    "plot_state": []
+    "plot_state": [
+        [
+            0,
+            "REAL"
+        ]
+    ]
 }

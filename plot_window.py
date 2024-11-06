@@ -52,9 +52,16 @@ class PlotWindow(QMainWindow):
         """Обновить текущее значение и комментарий для тега в таблице графиков."""
         for row in range(self.tag_list.rowCount()):
             if self.tag_list.item(row, 0).text() == label:  # Ищем тег по адресу
+                # Приводим значение к целому, если это не тип REAL
+                if "DWORD" in label or "WORD" in label:
+                    current_value = int(current_value)  # Приведение к целому
+                else:
+                    current_value = float(current_value)  # Для REAL оставляем как float
+
                 self.tag_list.setItem(row, 1, QTableWidgetItem(str(current_value)))  # Обновляем Current Value
                 self.tag_list.setItem(row, 2, QTableWidgetItem(comment))  # Обновляем Comment
                 break
+
 
     def clear_and_load_graph_data(self, plot_state):
         """Очищает все текущие данные с графика и загружает новые данные из plot_state."""
@@ -108,8 +115,6 @@ class PlotWindow(QMainWindow):
         self.lines.clear()  # Очищает словарь линий
         self.y_data.clear()  # Очищает данные для графика
         self.tag_list.setRowCount(0)  # Очищает таблицу тегов
-        # if isinstance(self.parent(), MainWindow):
-        self.parent().plot_data.clear()  # Полностью очищает plot_data
 
     def add_line(self, key, label, current_value=0.0, comment=""):
         """Добавить линию на график и в список тегов."""
@@ -138,6 +143,7 @@ class PlotWindow(QMainWindow):
                 if self.tag_list.item(row, 0).text() == key[1]:  # Совпадение по метке
                     self.tag_list.removeRow(row)
                     break
+
 
     def delete_selected_tag(self):
         """Удалить выбранный тег из графика и списка тегов."""

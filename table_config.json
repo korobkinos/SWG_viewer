@@ -2,10 +2,10 @@
     "plot_data": [
         [
             0,
-            "REAL"
+            "DWORD"
         ],
         [
-            1,
+            0,
             "REAL"
         ]
     ]
