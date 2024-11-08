@@ -32,5 +32,5 @@ class FloatModbusClient(ModbusClient):
         b16_l = long_list_to_word(b32_l)
         return self.write_multiple_registers(address, b16_l)
 
-ip_cpu = '192.168.56.2'
-port = '502'
+# ip_cpu = '192.168.56.2'
+# port = '502'

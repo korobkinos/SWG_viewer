@@ -5,8 +5,8 @@
         "interval": 100
     },
     "window_size": [
-        858,
-        663
+        861,
+        600
     ],
     "table_data": [
         {
@@ -16,6 +16,10 @@
         {
             "address": "6458",
             "comment": ""
+        },
+        {
+            "address": "1450",
+            "comment": "dd"
         }
     ],
     "column_settings": {
@@ -24,7 +28,7 @@
             100,
             100,
             100,
-            100,
+            284,
             100
         ],
         "visibility": [
@@ -40,6 +44,10 @@
         [
             0,
             "REAL"
+        ],
+        [
+            0,
+            "DWORD"
         ]
     ]
 }
